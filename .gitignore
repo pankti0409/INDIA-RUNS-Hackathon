@@ -179,3 +179,12 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Custom AI platform overrides
+cache/
+candidates.jsonl
+uploaded_candidates.jsonl
+*.docx
+*.zip
+*.csv
+!sample_candidates.json

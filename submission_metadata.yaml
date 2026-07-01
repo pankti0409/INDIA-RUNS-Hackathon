@@ -1,0 +1,59 @@
+team_name: "india-runs"
+
+primary_contact:
+  name: "Pankti"
+  email: "primary@example.com"
+  phone: "+91-XXXXXXXXXX"
+
+team_members:
+  - name: "Pankti"
+    email: "primary@example.com"
+    role: "Team Lead / ML Engineer"
+
+github_repo: "https://github.com/YOUR_USERNAME/redrob-ranker"
+
+sandbox_link: "https://huggingface.co/spaces/YOUR_USERNAME/redrob-ranker"
+
+reproduce_command: "python rank.py --candidates ./candidates.jsonl --out ./submission.csv"
+
+compute:
+  platform: "Windows PC"
+  cpu_cores: 8
+  ram_gb: 16
+  python_version: "3.10"
+  os: "Windows 11"
+  uses_gpu_for_inference: false
+  has_network_during_ranking: false
+  pre_computation_required: false
+  pre_computation_time_minutes: 0
+
+ai_tools_used:
+  - "Gemini"
+
+ai_usage_summary: |
+  Used Gemini (Antigravity) for architecture discussion, code generation, and code review.
+  All engineering decisions (feature weights, penalty design, honeypot logic) were designed
+  by analyzing the provided documents. No candidate data was fed to any external LLM during ranking.
+
+methodology_summary: |
+  Rule-based ensemble ranker with semantic understanding of JD requirements.
+  
+  Five main scoring components: (1) title/role match (28%) — per JD, title is the decisive
+  signal against keyword stuffers; (2) core AI/retrieval skill match (22%) targeting FAISS,
+  Elasticsearch, Milvus, Pinecone, Weaviate, sentence-transformers, RAG, NLP etc.; (3) experience
+  (15%) weighting product-company background and AI role tenure; (4) behavioral signals (12%)
+  modeling real hire-ability via availability, responsiveness, and reliability composites from
+  the 23 Redrob signals; (5) education, assessments, location, and GitHub (18% combined).
+  
+  Honeypot detection flags: disqualifier title + AI keyword stuffing, expert skills with 0 months
+  usage, assessment vs claim contradictions, impossible career timelines. Penalties are
+  multiplicative; bonuses are additive to preserve score differentiation.
+  
+  Runtime: ~66s on CPU for 100K candidates. No GPU, no network, no external APIs.
+
+declarations:
+  read_submission_spec: true
+  code_is_original_work: true
+  no_collusion: true
+  honeypot_check_done: true
+  reproduction_tested: true

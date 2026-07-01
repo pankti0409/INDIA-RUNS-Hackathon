@@ -1,0 +1,36 @@
+# Redrob Ranker — Python Dependencies
+# Core
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Fast data processing
+# polars>=0.19.0  # Optional - standard json+pandas works fine within constraints
+
+# API backend
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Validation
+pydantic>=2.0.0
+
+# Text processing
+rapidfuzz>=3.0.0
+
+# Fuzzy matching / NLP utilities (lightweight, no model download needed)
+scikit-learn>=1.3.0
+
+# Optional: semantic embeddings (uncomment if you want FAISS-based retrieval)
+# sentence-transformers>=2.2.0
+# faiss-cpu>=1.7.4
+
+# Optional: LightGBM for supervised ranking (if labels exist)
+# lightgbm>=4.0.0
+
+# YAML
+PyYAML>=6.0.0
+
+# Dev / test
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+httpx>=0.25.0  # For FastAPI test client

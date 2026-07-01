@@ -1,0 +1,20 @@
+version: "3.8"
+services:
+  ranker:
+    build: .
+    volumes:
+      - ./candidates.jsonl:/app/candidates.jsonl:ro
+      - ./submission.csv:/app/submission.csv
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  api:
+    build: .
+    command: uvicorn redrob_ranker.api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./candidates.jsonl:/app/candidates.jsonl:ro
+      - ./submission.csv:/app/submission.csv
+    environment:
+      - PYTHONUNBUFFERED=1
