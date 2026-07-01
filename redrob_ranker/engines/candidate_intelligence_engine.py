@@ -204,8 +204,8 @@ def extract_leadership_evidence(
 
     leadership_categories = {
         "mentoring": any(s in full_text for s in ["mentored", "mentoring", "coached", "trained engineers"]),
-        "ownership": any(s in full_text for s in ["owned", "ownership", "end-to-end"]),
-        "architecture": any(s in full_text for s in ["architected", "architecture decision", "designed the", "technical direction"]),
+        "ownership": any(s in full_text for s in ["owned", "ownership", "end-to-end", "led ", "leading ", "spearheaded", "drove"]),
+        "architecture": any(s in full_text for s in ["architected", "architecture decision", "designed the", "technical direction", "system design", "infrastructure design"]),
         "cross_functional": any(s in full_text for s in ["cross-functional", "cross team", "aligned", "collaborated across"]),
         "hiring": any(s in full_text for s in ["hired", "hiring", "built the team", "grew the team"]),
         "strategic": any(s in full_text for s in ["roadmap", "strategy", "strategic", "executive"]),

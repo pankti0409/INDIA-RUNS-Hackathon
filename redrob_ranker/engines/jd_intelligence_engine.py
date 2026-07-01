@@ -228,8 +228,12 @@ def _extract_skills_from_text(jd_text: str) -> Tuple[Set[str], Set[str]]:
     mandatory: Set[str] = set()
     preferred: Set[str] = set()
 
+    # Clean leading/trailing spaces per line first to handle indent formatting
+    cleaned_lines = [line.strip() for line in jd_text.splitlines() if line.strip()]
+    cleaned_text = "\n".join(cleaned_lines)
+
     # Split into paragraphs/sections
-    paragraphs = re.split(r"\n{2,}|\n(?=[A-Z])", jd_text)
+    paragraphs = re.split(r"\n{2,}|\n(?=[A-Z])", cleaned_text)
 
     for para in paragraphs:
         para_lower = para.lower()
@@ -280,11 +284,37 @@ def _classify_role_types(jd_text: str) -> List[str]:
 
 
 def _classify_seniority(jd_text: str) -> str:
-    """Identify seniority level from JD text."""
+    """Identify seniority level from JD text, checking explicit title keywords first."""
     text_lower = jd_text.lower()
-    for level, signals in SENIORITY_SIGNALS.items():
+    
+    # 1. Check explicit title keywords (ordered from highest to lowest)
+    title_priority = [
+        ("principal", ["principal"]),
+        ("staff", ["staff engineer", "staff ml", "staff scientist"]),
+        ("architect", ["architect", "solutions architect", "technical architect"]),
+        ("manager", ["manager", "director", "head of", "vp of", "lead engineer"]),
+        ("senior", ["senior", "sr."]),
+        ("mid", ["mid level", "mid-level"]),
+        ("junior", ["junior", "entry level", "entry-level", "fresher"]),
+        ("intern", ["intern", "internship", "student"]),
+    ]
+    
+    for level, signals in title_priority:
         if any(s in text_lower for s in signals):
             return level
+            
+    # 2. Fallback to years of experience patterns
+    exp_priority = [
+        ("principal", ["8+ years", "10+ years", "7+ years"]),
+        ("senior", ["5+ years", "5-8 years", "5-9 years", "experienced"]),
+        ("mid", ["2-4 years", "2-5 years", "3-5 years"]),
+        ("junior", ["0-2 years", "1-2 years"]),
+    ]
+    
+    for level, signals in exp_priority:
+        if any(s in text_lower for s in signals):
+            return level
+            
     return "senior"  # Default
 
 

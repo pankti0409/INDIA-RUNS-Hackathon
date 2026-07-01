@@ -276,7 +276,11 @@ def self_verify(
     Returns verification results and any flags for review.
     """
     checks = {
-        "evidence_not_assumed": features.get("core_skill_score", 0.0) > 0.0 or features.get("role_specific_depth_score", 0.0) > 0.0,
+        "evidence_not_assumed": not (
+            recommendation in ("strong_hire", "hire", "borderline_hire")
+            and features.get("core_skill_score", 0.0) == 0.0
+            and features.get("role_specific_depth_score", 0.0) == 0.0
+        ),
         "score_from_features": score > 0.0,
         "no_hallucination_risk": len(strengths) > 0 or recommendation in ("reject", "unlikely_fit"),
         "disqualifier_handled": not (

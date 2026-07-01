@@ -270,18 +270,30 @@ def analyze_candidate_gap(
     """
     if jd is None:
         try:
-            from redrob_ranker.config import REQUIRED_SKILLS, PREFERRED_SKILLS, JD_EXPERIENCE_RANGE
-            min_yoe, max_yoe = JD_EXPERIENCE_RANGE
+            from redrob_ranker.engines.jd_intelligence_engine import get_jd_intelligence
+            jd_intel = get_jd_intelligence()
             jd = {
-                "required_skills": REQUIRED_SKILLS,
-                "nice_to_have": PREFERRED_SKILLS,
-                "yoe_min": min_yoe,
-                "yoe_max": max_yoe,
-                "product_company_preferred": True,
-                "location": "India",
+                "required_skills": set(jd_intel.get("mandatory_skills", [])),
+                "nice_to_have": set(jd_intel.get("preferred_skills", [])),
+                "yoe_min": jd_intel.get("yoe_min", 5),
+                "yoe_max": jd_intel.get("yoe_max", 9),
+                "product_company_preferred": jd_intel.get("product_company_preferred", True),
+                "location": "India" if jd_intel.get("location_required") else "Remote",
             }
         except Exception:
-            jd = DEFAULT_JD
+            try:
+                from redrob_ranker.config import REQUIRED_SKILLS, PREFERRED_SKILLS, JD_EXPERIENCE_RANGE
+                min_yoe, max_yoe = JD_EXPERIENCE_RANGE
+                jd = {
+                    "required_skills": REQUIRED_SKILLS,
+                    "nice_to_have": PREFERRED_SKILLS,
+                    "yoe_min": min_yoe,
+                    "yoe_max": max_yoe,
+                    "product_company_preferred": True,
+                    "location": "India",
+                }
+            except Exception:
+                jd = DEFAULT_JD
     skills = candidate.get("skills", [])
 
     # 1. Skill gaps
