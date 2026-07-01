@@ -296,3 +296,38 @@ def test_decision_engine_reject_flow(sample_candidate_non_ml):
     assert len(decision["key_gaps"]) >= 2
     assert len(decision["risk_factors"]) >= 1
     assert decision["self_verification"]["all_checks_passed"] is True
+
+
+def test_dynamic_weights_ranking_propagation():
+    from redrob_ranker.engines.ranking_engine import compute_final_score
+    
+    features = {
+        "semantic_similarity_score": 0.80,
+        "cross_encoder_score": 0.80,
+        "role_specific_depth_score": 0.70,
+        "combined_title_score": 0.80,
+        "core_skill_score": 0.80,
+        "jd_skill_soft_coverage": 0.80,
+        "engineering_maturity_score": 0.80,
+        "industry_relevance_score": 0.80,
+        "project_complexity_score": 0.80,
+        "trust_score": 0.90,
+        "risk_probability": 0.0,
+        "hireability_probability": 0.90,
+        "open_to_work_flag": 1.0,
+        "active_recently": 1.0
+    }
+    
+    # Custom weight profile putting 100% weight on project complexity
+    custom_weight_profile = {
+        "feature_weights": {
+            "project_complexity_score": 1.0
+        }
+    }
+    
+    score_normal = compute_final_score(features)
+    score_custom = compute_final_score(features, weight_profile=custom_weight_profile)
+    
+    assert score_normal > 0.0
+    assert score_custom > 0.0
+    assert score_normal != score_custom

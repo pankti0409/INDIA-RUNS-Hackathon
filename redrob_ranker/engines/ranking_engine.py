@@ -23,7 +23,10 @@ def sigmoid(x: float) -> float:
         return 0.0 if x < 0 else 1.0
 
 
-def compute_final_score(features: Dict[str, float]) -> float:
+def compute_final_score(
+    features: Dict[str, float],
+    weight_profile: Optional[dict] = None,
+) -> float:
     """
     Production Ranking Formula — integrates all intelligence engines.
 
@@ -61,18 +64,44 @@ def compute_final_score(features: Dict[str, float]) -> float:
     industry_rel = features.get("industry_relevance_score", 0.50)
     project_complexity = features.get("project_complexity_score", 0.0)
 
-    # ── Step 1: Base relevance (enriched) ─────────────────────────────────────
-    relevance = (
-        0.26 * h_score
-        + 0.26 * ce_score
-        + 0.10 * depth_score
-        + 0.14 * title_score
-        + 0.10 * skill_score
-        + 0.06 * jd_skill_coverage     # Skill graph soft coverage
-        + 0.04 * maturity_score        # Engineering maturity
-        + 0.02 * industry_rel          # Industry relevance
-        + 0.02 * project_complexity    # Project complexity
-    )
+    # ── Step 1: Base relevance (enriched with dynamic weights if available) ──
+    relevance_keys = [
+        "semantic_similarity_score",
+        "cross_encoder_score",
+        "role_specific_depth_score",
+        "combined_title_score",
+        "core_skill_score",
+        "jd_skill_soft_coverage",
+        "engineering_maturity_score",
+        "industry_relevance_score",
+        "project_complexity_score",
+    ]
+    
+    weights = weight_profile.get("feature_weights", {}) if weight_profile else {}
+    rel_weights = {k: weights.get(k, 0.0) for k in relevance_keys}
+    total_rel_weight = sum(rel_weights.values())
+    
+    if total_rel_weight > 0.0:
+        relevance = sum(
+            (rel_weights[k] / total_rel_weight) * features.get(k, 0.0)
+            for k in relevance_keys
+        )
+    else:
+        # Fallback to static coefficients
+        relevance = (
+            0.26 * h_score
+            + 0.26 * ce_score
+            + 0.10 * depth_score
+            + 0.14 * title_score
+            + 0.10 * skill_score
+            + 0.06 * jd_skill_coverage     # Skill graph soft coverage
+            + 0.04 * maturity_score        # Engineering maturity
+            + 0.02 * industry_rel          # Industry relevance
+            + 0.02 * project_complexity    # Project complexity
+        )
+    
+    # Store calculated relevance in feature dict for reporting/decision outputs
+    features["relevance_score"] = relevance
 
     # ── Step 2: Title-Tier Gate ────────────────────────────────────────────
     title_tier = features.get("title_tier", "tier_3")
@@ -252,6 +281,7 @@ def rank_candidates(
     top_n: int = TOP_CANDIDATES,
     log_interval: int = 10000,
     semantic_scores: Optional[dict] = None,
+    weight_profile: Optional[dict] = None,
 ) -> List[Tuple[dict, Dict[str, float], float]]:
     """
     Runs multi-stage cascade ranking:
@@ -272,14 +302,17 @@ def rank_candidates(
     # ── Step 1: Initialize SemanticEngine & Load Models ──────────────────────
     engine = get_engine()
     
-    # Dynamic JD Integration (Block 4)
+    # Dynamic JD Integration & Weight Retrieval (Block 4 & Block 12)
     try:
         from redrob_ranker.engines.jd_intelligence_engine import get_jd_intelligence
+        from redrob_ranker.engines.dynamic_weight_engine import get_weight_profile
         jd_intel = get_jd_intelligence()
+        if weight_profile is None and jd_intel:
+            weight_profile = get_weight_profile(jd_intel)
         if jd_intel and jd_intel.get("jd_text"):
             engine.set_jd_text(jd_intel["jd_text"])
     except Exception as e:
-        logger.warning(f"Failed to synchronize dynamic JD text: {e}")
+        logger.warning(f"Failed to synchronize dynamic weights/JD text: {e}")
 
     engine._load_model()
     engine._load_cross_encoder()
@@ -394,14 +427,34 @@ def rank_candidates(
         feat["bm25_score"] = bm25_scores.get(cid, 0.0)
         feat["semantic_similarity_score"] = h_score
         
-        # Relevance Score
-        title_score = feat.get("combined_title_score", 0.0)
-        skill_score = feat.get("core_skill_score", 0.0)
-        relevance = 0.30 * h_score + 0.30 * ce_score + 0.10 * feat.get("role_specific_depth_score", 0.0) + 0.15 * title_score + 0.15 * skill_score
+        # Dynamic Relevance Score Calculation
+        relevance_keys = [
+            "semantic_similarity_score",
+            "cross_encoder_score",
+            "role_specific_depth_score",
+            "combined_title_score",
+            "core_skill_score",
+            "jd_skill_soft_coverage",
+            "engineering_maturity_score",
+            "industry_relevance_score",
+            "project_complexity_score",
+        ]
+        weights_map = weight_profile.get("feature_weights", {}) if weight_profile else {}
+        rel_weights = {k: weights_map.get(k, 0.0) for k in relevance_keys}
+        total_rel_weight = sum(rel_weights.values())
+        
+        if total_rel_weight > 0.0:
+            relevance = sum(
+                (rel_weights[k] / total_rel_weight) * feat.get(k, 0.0)
+                for k in relevance_keys
+            )
+        else:
+            relevance = 0.30 * h_score + 0.30 * ce_score + 0.10 * feat.get("role_specific_depth_score", 0.0) + 0.15 * title_score + 0.15 * skill_score
+        
         feat["relevance_score"] = relevance
         
         # Compute final score
-        final_score = compute_final_score(feat)
+        final_score = compute_final_score(feat, weight_profile=weight_profile)
         scored_candidates.append((c, feat, final_score))
         
     # ── Step 8: Sort and return REAL candidates only (no padding here) ──────
