@@ -108,9 +108,16 @@ class SemanticEngine:
         self.cross_encoder: Optional[CrossEncoder] = None
         self.jd_embedding: Optional[np.ndarray] = None
         self.best_dense_ratio = 0.75  # Default ratio: 75% dense, 25% BM25
+        self.jd_text = JD_TEXT  # Default Job Description text
         # Cached scores to avoid triple-encoding during a single rank run
         self._cached_dense_scores: Optional[Dict[str, float]] = None
         self._cached_bm25_scores: Optional[Dict[str, float]] = None
+
+    def set_jd_text(self, jd_text: str):
+        """Set the Job Description text and invalidate cached embedding."""
+        if jd_text and jd_text.strip():
+            self.jd_text = jd_text
+            self.jd_embedding = None
 
     def _load_model(self) -> bool:
         if not HAS_ST:
@@ -142,8 +149,11 @@ class SemanticEngine:
         if self.jd_embedding is not None:
             return self.jd_embedding
 
+        # Hash the JD text to build a dynamic cache key
+        text_hash = hashlib.md5(self.jd_text.encode("utf-8")).hexdigest()[:12]
+
         CACHE_DIR.mkdir(exist_ok=True)
-        jd_cache = CACHE_DIR / "jd_embedding.npy"
+        jd_cache = CACHE_DIR / f"jd_embedding_{text_hash}.npy"
         if jd_cache.exists():
             self.jd_embedding = np.load(str(jd_cache))
             return self.jd_embedding
@@ -151,7 +161,7 @@ class SemanticEngine:
         if not self._load_model():
             return None
 
-        self.jd_embedding = self.model.encode([JD_TEXT], normalize_embeddings=True)[0]
+        self.jd_embedding = self.model.encode([self.jd_text], normalize_embeddings=True)[0]
         np.save(str(jd_cache), self.jd_embedding)
         return self.jd_embedding
 
@@ -301,7 +311,7 @@ class SemanticEngine:
             sample = candidates[:sample_size]
 
         # Calculate Cross-Encoder relevance scores
-        pairs = [(JD_TEXT, _candidate_to_text(c)) for c in sample]
+        pairs = [(self.jd_text, _candidate_to_text(c)) for c in sample]
         ce_scores = self.cross_encoder.predict(pairs, batch_size=16)
         
         # Normalize CE scores

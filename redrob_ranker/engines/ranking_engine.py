@@ -271,6 +271,16 @@ def rank_candidates(
 
     # ── Step 1: Initialize SemanticEngine & Load Models ──────────────────────
     engine = get_engine()
+    
+    # Dynamic JD Integration (Block 4)
+    try:
+        from redrob_ranker.engines.jd_intelligence_engine import get_jd_intelligence
+        jd_intel = get_jd_intelligence()
+        if jd_intel and jd_intel.get("jd_text"):
+            engine.set_jd_text(jd_intel["jd_text"])
+    except Exception as e:
+        logger.warning(f"Failed to synchronize dynamic JD text: {e}")
+
     engine._load_model()
     engine._load_cross_encoder()
 
@@ -353,7 +363,7 @@ def rank_candidates(
         
     # ── Step 6: Batch inference on Cross-Encoder ────────────────────────────
     logger.info(f"Running Cross-Encoder prediction (batch_size=64)...")
-    pairs = [(JD_TEXT, _candidate_to_text(c)) for c, _ in top_features]
+    pairs = [(engine.jd_text, _candidate_to_text(c)) for c, _ in top_features]
     
     if pairs and engine.cross_encoder is not None:
         try:
