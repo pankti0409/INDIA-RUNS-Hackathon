@@ -18,7 +18,9 @@ import csv
 import logging
 import sys
 import time
+import math
 from pathlib import Path
+from typing import Tuple
 
 # Ensure redrob_ranker is importable from any working directory
 sys.path.insert(0, str(Path(__file__).parent))
@@ -154,6 +156,12 @@ def main():
         default=False,
         help="Train the LightGBM LambdaMART LTR model on the loaded candidates and exit",
     )
+    parser.add_argument(
+        "--ablation",
+        action="store_true",
+        default=False,
+        help="Run an automated ablation study across ranking subsystems and exit",
+    )
     args = parser.parse_args()
 
     t_start = time.time()
@@ -248,6 +256,11 @@ def main():
         logger.info("=" * 60)
         return 0
 
+    # ── Optional Step: Run Ablation Study ──────────────────────────────────
+    if args.ablation:
+        from rank import run_ablation_study
+        return run_ablation_study(candidates)
+
     # ── Step 2: Score and rank ────────────────────────────────────────────
     t2 = time.time()
     logger.info(f"\n[2/4] Scoring and ranking {len(candidates)} candidates...")
@@ -305,6 +318,150 @@ def main():
         logger.warning(f"WARNING: Runtime {t_total:.0f}s exceeds 5-minute limit!")
 
     logger.info("=" * 60)
+    return 0
+
+
+def run_ablation_study(candidates: list) -> int:
+    """Run an automated ablation study and write the results to a report."""
+    logger.info("\n" + "=" * 60)
+    logger.info("RIRE PIPELINE ABLATION STUDY & METRICS BENCHMARK")
+    logger.info("=" * 60)
+    logger.info(f"Evaluating ablation impact over {len(candidates)} candidates...")
+    
+    from redrob_ranker.engines.ranking_engine import rank_candidates, compute_final_score
+    import redrob_ranker.engines.ranking_engine as ranking_engine
+    
+    # 1. Pure Heuristic Baseline Reference (LTR disabled)
+    original_has_ltr = ranking_engine.HAS_LTR
+    ranking_engine.HAS_LTR = False
+    try:
+        baseline_ranked = rank_candidates(candidates, top_n=min(len(candidates), 250))
+    finally:
+        ranking_engine.HAS_LTR = original_has_ltr
+        
+    if not baseline_ranked:
+        logger.error("No candidates ranked in baseline. Ablation study aborted.")
+        return 1
+        
+    # Extract baseline scores as the reference target
+    target_scores = {c.get("candidate_id", ""): score for c, _, score in baseline_ranked}
+    
+    # Helper to calculate NDCG and MRR
+    def evaluate_ranking(ranked_list: list) -> Tuple[float, float, float]:
+        relevances = [target_scores.get(c.get("candidate_id", ""), 0.0) for c, _, _ in ranked_list]
+        ideal_relevances = sorted(relevances, reverse=True)
+        
+        def ndcg_at_k(y_true, y_ideal, k):
+            dcg = sum((val) / math.log2(idx + 2) for idx, val in enumerate(y_true[:k]))
+            idcg = sum((val) / math.log2(idx + 2) for idx, val in enumerate(y_ideal[:k]))
+            return dcg / idcg if idcg > 0 else 0.0
+            
+        ndcg10 = ndcg_at_k(relevances, ideal_relevances, 10)
+        ndcg20 = ndcg_at_k(relevances, ideal_relevances, 20)
+        
+        mrr = 0.0
+        for idx, c in enumerate(ranked_list):
+            cid = c[0].get("candidate_id", "")
+            if target_scores.get(cid, 0.0) >= 0.80:
+                mrr = 1.0 / (idx + 1)
+                break
+        return ndcg10, ndcg20, mrr
+
+    # Calculate metrics for the Full System (with LTR blending if available)
+    full_ranked = rank_candidates(candidates, top_n=min(len(candidates), 250))
+    full_ndcg10, full_ndcg20, full_mrr = evaluate_ranking(full_ranked)
+    
+    ablation_results = [
+        ("Full Blended System", full_ndcg10, full_ndcg20, full_mrr, "Baseline configuration")
+    ]
+    
+    # Helper to temporarily override features and re-score
+    def evaluate_ablation_config(label: str, description: str, modify_feature_fn):
+        modified_ranked = []
+        for c, feat, _ in full_ranked:
+            feat_copy = dict(feat)
+            modify_feature_fn(feat_copy)
+            modified_score = compute_final_score(feat_copy)
+            modified_ranked.append((c, feat_copy, modified_score))
+        modified_ranked.sort(key=lambda x: (-x[2], x[0].get("candidate_id", "")))
+        ndcg10, ndcg20, mrr = evaluate_ranking(modified_ranked)
+        ablation_results.append((label, ndcg10, ndcg20, mrr, description))
+
+    # 2. Ablation: Without Cross-Encoder
+    evaluate_ablation_config(
+        "Ablation: No Cross-Encoder",
+        "Set cross-encoder score to hybrid similarity",
+        lambda f: f.update({"cross_encoder_score": f.get("semantic_similarity_score", 0.5)})
+    )
+    
+    # 3. Ablation: No Candidate Intelligence
+    evaluate_ablation_config(
+        "Ablation: No Candidate Intelligence",
+        "Set maturity and project complexity to defaults",
+        lambda f: f.update({
+            "engineering_maturity_score": 0.40,
+            "project_complexity_score": 0.0,
+            "leadership_evidence_score": 0.0
+        })
+    )
+    
+    # 4. Ablation: No Company Intelligence
+    evaluate_ablation_config(
+        "Ablation: No Company Intelligence",
+        "Set industry relevance and company quality to defaults",
+        lambda f: f.update({
+            "company_quality_score": 0.40,
+            "industry_relevance_score": 0.40,
+            "has_big_tech_experience": 0.0,
+            "has_search_ranking_experience": 0.0
+        })
+    )
+    
+    # 5. Ablation: No Behavioral Signals
+    evaluate_ablation_config(
+        "Ablation: No Behavioral Boosters",
+        "Disable hireability and active recently flags",
+        lambda f: f.update({
+            "hireability_probability": 0.0,
+            "open_to_work_flag": 0.0,
+            "active_recently": 0.0
+        })
+    )
+
+    # 6. Ablation: No LTR Blending
+    ranking_engine.HAS_LTR = False
+    try:
+        no_ltr_ranked = rank_candidates(candidates, top_n=min(len(candidates), 250))
+        no_ltr_ndcg10, no_ltr_ndcg20, no_ltr_mrr = evaluate_ranking(no_ltr_ranked)
+        ablation_results.append(
+            ("Ablation: No LTR Blending", no_ltr_ndcg10, no_ltr_ndcg20, no_ltr_mrr, "Disable LightGBM model prediction")
+        )
+    finally:
+        ranking_engine.HAS_LTR = original_has_ltr
+    
+    # Print Ablation Report Table
+    print("\n" + "=" * 90)
+    print(f"{'Ranking Configuration':<35} | {'NDCG@10':<7} | {'NDCG@20':<7} | {'MRR':<5} | {'Description'}")
+    print("-" * 90)
+    for name, n10, n20, mrr, desc in ablation_results:
+        print(f"{name:<35} | {n10:.4f}  | {n20:.4f}  | {mrr:.4f} | {desc}")
+    print("=" * 90 + "\n")
+    
+    # Write ablation report to file
+    ablation_report_lines = [
+        "# Automated Ablation Study & Subsystem Evaluation Report",
+        "",
+        "This report measures the impact of removing different candidate intelligence subsystems on ranking quality.",
+        "",
+        "| Ranking Configuration | NDCG@10 | NDCG@20 | MRR | Description |",
+        "| :--- | :--- | :--- | :--- | :--- |"
+    ]
+    for name, n10, n20, mrr, desc in ablation_results:
+        ablation_report_lines.append(f"| {name} | {n10:.4f} | {n20:.4f} | {mrr:.4f} | {desc} |")
+        
+    from pathlib import Path
+    Path("./ablation_study_report.md").write_text("\n".join(ablation_report_lines), encoding="utf-8")
+    logger.info("Ablation study report written to './ablation_study_report.md'")
     return 0
 
 

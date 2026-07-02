@@ -65,11 +65,11 @@ NON_AI_SKILLS: Set[str] = {
 
 # Role Tier multipliers applied to relevance score
 ROLE_TIER_SCORES: Dict[str, float] = {
-    "tier_1": 1.05,   # Retrieval/Ranking/Search/Recommendation Engineer (super-tier boost)
-    "tier_2": 0.85,   # ML Engineer, AI Engineer, Applied Scientist, Data Scientist
-    "tier_3": 0.65,   # Software Engineer, Backend Engineer with ML signals
-    "tier_4": 0.35,   # Frontend, DevOps, Mobile, Data Engineer, Cloud Eng
-    "tier_5": 0.08,   # Non-technical, wrong domain entirely
+    "tier_1": 1.00,   # Retrieval/Ranking/Search/Recommendation Engineer
+    "tier_2": 0.92,   # ML Engineer, AI Engineer, Applied Scientist, Data Scientist
+    "tier_3": 0.80,   # Software Engineer, Backend Engineer with ML signals
+    "tier_4": 0.60,   # Frontend, DevOps, Mobile, Data Engineer, Cloud Eng
+    "tier_5": 0.12,   # Non-technical, wrong domain entirely
 }
 
 # Full title → (tier, base_score) mapping
@@ -182,12 +182,12 @@ FEATURE_WEIGHTS: Dict[str, float] = {
 # Penalty multipliers
 PENALTIES: Dict[str, float] = {
     "disqualifier_title": 0.08,        # Title is hard disqualifier (graphic designer etc)
-    "tier_4_title": 0.35,              # Tier 4 title (frontend, devops, mobile)
-    "pure_consulting_background": 0.50,  # Entire career at Big IT outsourcers
+    "tier_4_title": 0.60,              # Tier 4 title (frontend, devops, mobile)
+    "pure_consulting_background": 0.85,  # Entire career at Big IT outsourcers
     "honeypot_high": 0.05,             # Very likely honeypot
     "honeypot_medium": 0.40,           # Possible honeypot
-    "no_ai_skills_at_all": 0.15,       # Zero AI-relevant skills
-    "no_product_company": 0.80,        # Never worked at a product company (mild)
+    "no_ai_skills_at_all": 0.30,       # Zero AI-relevant skills
+    "no_product_company": 0.90,        # Never worked at a product company (mild)
 }
 
 # Bonus multipliers — kept small to avoid overriding role signals

@@ -705,6 +705,12 @@ async def hackathon_rank(
                 "resp_depth_score": round(feat.get("resp_depth_score", 0), 4),
                 "architecture_exp": round(feat.get("architecture_exp_score", 0), 4),
                 "feature_confidence": round(feat.get("feature_confidence_score", 0), 4),
+                # Consensus metrics
+                "consensus_score": round(feat.get("overall_consensus_score", 0.5), 4),
+                "technical_consensus": round(feat.get("technical_consensus", 0.5), 4),
+                "experience_consensus": round(feat.get("experience_consensus", 0.5), 4),
+                "leadership_consensus": round(feat.get("leadership_consensus", 0.5), 4),
+                "project_consensus": round(feat.get("project_consensus", 0.5), 4),
             },
         })
         

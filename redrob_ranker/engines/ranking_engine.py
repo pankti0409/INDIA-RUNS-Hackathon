@@ -136,23 +136,20 @@ def compute_final_score(
     role_adjusted_relevance = relevance * tier_multiplier
 
     # ── Step 3: Structural penalties ─────────────────────────────────────
-    structural_multiplier = 1.0
-
-    if features.get("is_pure_consulting", 0.0) == 1.0:
-        structural_multiplier *= PENALTIES.get("pure_consulting_background", 0.50)
-    if features.get("has_product_company", 1.0) == 0.0:
-        structural_multiplier *= PENALTIES.get("no_product_company", 0.80)
-    # No AI skills at all is a hard penalization
-    if features.get("core_skill_score", 0.0) == 0.0 and features.get("preferred_skill_score", 0.0) == 0.0:
-        structural_multiplier *= PENALTIES.get("no_ai_skills_at_all", 0.15)
+    # Soften penalty combination using the minimum penalty to avoid destructive chaining
+    p_consulting = PENALTIES.get("pure_consulting_background", 0.85) if features.get("is_pure_consulting", 0.0) == 1.0 else 1.0
+    p_product = PENALTIES.get("no_product_company", 0.90) if features.get("has_product_company", 1.0) == 0.0 else 1.0
+    p_ai = PENALTIES.get("no_ai_skills_at_all", 0.30) if (features.get("core_skill_score", 0.0) == 0.0 and features.get("preferred_skill_score", 0.0) == 0.0) else 1.0
 
     # ── Step 4: Risk / Honeypot penalty ──────────────────────────────────
     risk = features.get("risk_probability", 0.0)
+    p_risk = 1.0
     if risk >= 0.75:
-        structural_multiplier *= PENALTIES.get("honeypot_high", 0.05)
+        p_risk = PENALTIES.get("honeypot_high", 0.05)
     elif risk >= 0.5:
-        structural_multiplier *= PENALTIES.get("honeypot_medium", 0.40)
+        p_risk = PENALTIES.get("honeypot_medium", 0.40)
 
+    structural_multiplier = min(p_consulting, p_product, p_ai) * p_risk
     relevance_penalized = role_adjusted_relevance * structural_multiplier
 
     # ── Step 5: Behavioral multiplier — bounded [0.60, 1.15] ─────────────
@@ -469,6 +466,16 @@ def rank_candidates(
         
         feat["relevance_score"] = relevance
         
+        # Run Multi-Agent Consensus Engine (Block 11)
+        try:
+            from redrob_ranker.engines.consensus_engine import get_consensus_engine
+            consensus_res = get_consensus_engine().synthesize(feat)
+            feat.update(consensus_res)
+            # Blend consensus score into overall relevance
+            feat["relevance_score"] = 0.60 * relevance + 0.40 * consensus_res["overall_consensus_score"]
+        except Exception as exc:
+            logger.warning(f"Multi-Agent Consensus evaluation failed for candidate {cid}: {exc}")
+
         # Compute final score
         final_score = compute_final_score(feat, weight_profile=weight_profile)
         scored_candidates.append((c, feat, final_score))
@@ -477,11 +484,7 @@ def rank_candidates(
     logger.info("Sorting candidates by score...")
     scored_candidates.sort(key=lambda x: (-x[2], x[0].get("candidate_id", "")))
 
-    # ── Step 9: Listwise Score Calibration ──────────────────────────────
-    # Ensure score gaps between adjacent candidates are proportional to feature gaps
-    scored_candidates = _listwise_calibrate(scored_candidates)
-
-    # ── Step 10: LTR Score Blending (when model is trained) ─────────────
+    # ── Step 9: LTR Score Blending (when model is trained) ─────────────
     # When a trained LightGBM LambdaMART model is available, blend its score
     # with the heuristic compute_final_score for improved ranking quality.
     # Blend: 70% LTR + 30% heuristic (per plan.md Block 2 §18)
@@ -490,15 +493,22 @@ def rank_candidates(
             ltr_engine = get_ltr_engine()
             if ltr_engine.is_trained():
                 ltr_fds = [feat for _, feat, _ in scored_candidates]
-                ltr_cids = [c.get("candidate_id", "") for c, _, _ in scored_candidates]
                 ltr_scores = ltr_engine.predict(ltr_fds)
 
-                # Normalize LTR scores to [0, 1] within the candidate pool
-                ltr_min, ltr_max = ltr_scores.min(), ltr_scores.max()
+                # Robust min-max normalization using 5th and 95th percentiles to prevent outlier compression
+                ltr_min = np.percentile(ltr_scores, 5)
+                ltr_max = np.percentile(ltr_scores, 95)
                 if ltr_max > ltr_min:
                     ltr_norm = (ltr_scores - ltr_min) / (ltr_max - ltr_min)
+                    ltr_norm = np.clip(ltr_norm, 0.0, 1.0)
                 else:
-                    ltr_norm = ltr_scores
+                    # Fallback to standard min-max if distribution is flat
+                    min_val = ltr_scores.min()
+                    max_val = ltr_scores.max()
+                    if max_val > min_val:
+                        ltr_norm = (ltr_scores - min_val) / (max_val - min_val)
+                    else:
+                        ltr_norm = np.zeros_like(ltr_scores)
 
                 blended = []
                 for i, (c, feat, heuristic_score) in enumerate(scored_candidates):
@@ -512,6 +522,20 @@ def rank_candidates(
                 logger.info("LTR blending applied (70% LTR + 30% heuristic)")
         except Exception as ltr_exc:
             logger.warning(f"LTR blending failed (continuing with heuristic): {ltr_exc}")
+
+    # ── Step 10: Deep Reranking (Block 8) ───────────────────────────────
+    # Run comparative reranking on the top finalists
+    try:
+        from redrob_ranker.engines.reranking_engine import get_reranking_engine
+        reranking_engine = get_reranking_engine()
+        scored_candidates = reranking_engine.rerank(scored_candidates)
+    except Exception as rerank_exc:
+        logger.warning(f"Deep comparative reranking failed: {rerank_exc}")
+
+    # ── Step 11: Listwise Score Calibration ──────────────────────────────
+    # Run the calibration pass on the FINAL blended scores to ensure smooth score
+    # distribution, monotonicity, and readable recruiter tiers.
+    scored_candidates = _listwise_calibrate(scored_candidates)
 
     # ── Step 11: SHAP Explanations ──────────────────────────────────────
     # Attach recruiter-quality explanations to each candidate's feature dict.

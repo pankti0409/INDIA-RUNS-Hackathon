@@ -6,18 +6,18 @@ This report outlines the statistical distribution metrics across all key engine 
 
 | Scoring Stage | Mean | Median | Std Dev | Min | Max |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| Dense Similarity | 0.9318 | 0.9322 | 0.0135 | 0.8924 | 0.9638 |
-| BM25 Score | 0.6034 | 0.5855 | 0.1104 | 0.4269 | 1.0000 |
-| Cross Encoder Score | 0.6745 | 0.7187 | 0.2204 | 0.1348 | 0.9810 |
-| Availability | 0.8221 | 0.8286 | 0.0468 | 0.6803 | 0.9367 |
-| Trust Score | 0.7793 | 0.7978 | 0.1042 | 0.5260 | 0.9656 |
-| Risk Probability | 0.0128 | 0.0000 | 0.0524 | 0.0000 | 0.2954 |
-| Final Score | 0.4062 | 0.3841 | 0.1200 | 0.2799 | 0.9553 |
+| Dense Similarity | 0.8242 | 0.8225 | 0.0213 | 0.7931 | 0.9324 |
+| BM25 Score | 0.1407 | 0.0947 | 0.1616 | 0.0000 | 1.0000 |
+| Cross Encoder Score | 0.0366 | 0.0028 | 0.1270 | 0.0004 | 0.9055 |
+| Availability | 0.7365 | 0.7329 | 0.0424 | 0.6289 | 0.8299 |
+| Trust Score | 0.5576 | 0.5640 | 0.1205 | 0.2764 | 0.8092 |
+| Risk Probability | 0.1331 | 0.0177 | 0.2379 | 0.0000 | 0.8782 |
+| Final Score | 0.1862 | 0.1821 | 0.0930 | 0.0713 | 0.6767 |
 
 ## Automated Diagnostics Analysis
-- **Score Compression Detected**: No (Final score spread: 0.6754)
-- **Score Collapse Detected**: No (Maximum top score: 0.9553)
-- **Over-Penalization / Penalty Decay**: No (Average candidate score: 0.4062)
+- **Score Compression Detected**: No (Final score spread: 0.6054)
+- **Score Collapse Detected**: No (Maximum top score: 0.6767)
+- **Over-Penalization / Penalty Decay**: No (Average candidate score: 0.1862)
 
 ## Verification Verdict
 ✓ **Healthy Distribution**: Final scores show wide separation and realistic levels (60%-90% for top matches) without decay-induced compression.

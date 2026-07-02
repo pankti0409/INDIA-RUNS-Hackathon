@@ -513,15 +513,15 @@ class LTREngine:
             "objective": objective,
             "metric": "ndcg",
             "eval_at": [ndcg_eval_at],
-            "num_leaves": num_leaves,
-            "learning_rate": learning_rate,
+            "num_leaves": 15,            # Smoother, less deep trees
+            "learning_rate": 0.03,       # Slower learning rate to prevent sharp cliffs
             "n_estimators": n_estimators,
-            "min_data_in_leaf": max(1, len(feature_dicts) // 10),
-            "feature_fraction": 0.8,
+            "min_data_in_leaf": 100,     # Prevent splitting on small, overfitted candidate clusters
+            "feature_fraction": 0.7,     # Regularize feature selection
             "bagging_fraction": 0.9,
             "bagging_freq": 5,
-            "lambda_l1": 0.1,
-            "lambda_l2": 0.1,
+            "lambda_l1": 1.5,            # Strong L1 regularization
+            "lambda_l2": 1.5,            # Strong L2 regularization
             "verbose": -1,
             "random_state": 42,
         }
