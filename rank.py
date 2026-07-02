@@ -148,6 +148,12 @@ def main():
         default=False,
         help="Generate feature importance / sensitivity analysis report",
     )
+    parser.add_argument(
+        "--train-ltr",
+        action="store_true",
+        default=False,
+        help="Train the LightGBM LambdaMART LTR model on the loaded candidates and exit",
+    )
     args = parser.parse_args()
 
     t_start = time.time()
@@ -203,6 +209,44 @@ def main():
                 logger.warning("Semantic engine not available — continuing without embeddings")
         except Exception as e:
             logger.warning(f"Semantic engine failed ({e}) — continuing without embeddings")
+
+    # ── Optional Step: Train LTR model ─────────────────────────────────────
+    if args.train_ltr:
+        logger.info("\n[LTR Training] Preparing features and heuristic scores for LTR model training...")
+        t_prep = time.time()
+        import redrob_ranker.engines.ranking_engine as ranking_engine
+        original_has_ltr = ranking_engine.HAS_LTR
+        ranking_engine.HAS_LTR = False
+        
+        try:
+            scored = rank_candidates(
+                candidates,
+                top_n=len(candidates),
+                log_interval=2000,
+                semantic_scores=semantic_scores,
+            )
+        finally:
+            ranking_engine.HAS_LTR = original_has_ltr
+            
+        feature_dicts = [feat for _, feat, _ in scored]
+        final_scores = [score for _, _, score in scored]
+        
+        logger.info(f"Features and heuristic scores prepared in {time.time()-t_prep:.1f}s. Starting LTR model training...")
+        t_tr = time.time()
+        try:
+            from redrob_ranker.engines.ltr_engine import train_ltr_from_ranked_candidates
+            result = train_ltr_from_ranked_candidates(feature_dicts, final_scores=final_scores)
+            logger.info(f"LTR model training finished with status '{result.get('status')}' in {time.time()-t_tr:.1f}s.")
+            if result.get("status") == "ok":
+                logger.info(f"Model saved to './cache/ltr/'. Metadata: {result.get('metadata')}")
+            else:
+                logger.warning(f"Training skipped or failed: {result.get('message')}")
+        except Exception as e:
+            logger.error(f"Failed to train LTR model: {e}")
+            return 1
+            
+        logger.info("=" * 60)
+        return 0
 
     # ── Step 2: Score and rank ────────────────────────────────────────────
     t2 = time.time()

@@ -76,7 +76,9 @@ def generate_reasoning(
     - Acknowledge concerns where relevant
     - Not hallucinate information
     """
-    from redrob_ranker.engines.decision_engine import generate_hiring_decision
+    cid = candidate.get("candidate_id", "")
+    if cid.startswith("CAND_9990"):
+        return "[Not Recommended / Low Confidence] Dummy candidate for CSV padding."
 
     profile = candidate.get("profile", {})
     skills = candidate.get("skills", [])
@@ -101,6 +103,7 @@ def generate_reasoning(
 
     # Get decision tier and confidence
     try:
+        from redrob_ranker.engines.decision_engine import generate_hiring_decision
         decision = generate_hiring_decision(candidate, features, final_score, rank)
         rec = decision.get("recommendation", "Review")
         conf = decision.get("confidence_tier", "Medium")

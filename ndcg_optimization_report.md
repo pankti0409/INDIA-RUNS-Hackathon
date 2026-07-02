@@ -8,11 +8,11 @@ This report audits the ranking order and candidate scoring properties to ensure 
 
 ## Top 100 Score Statistics
 
-- **Maximum Score**: 0.9021
-- **Minimum Score**: 0.7030
-- **Score Spread Range**: 0.1991
-- **Mean Score**: 0.7717
-- **Standard Deviation**: 0.0459
+- **Maximum Score**: 0.9886
+- **Minimum Score**: 0.4104
+- **Score Spread Range**: 0.5782
+- **Mean Score**: 0.6908
+- **Standard Deviation**: 0.1893
 
 ## Score Compression Analysis
 Score compression is monitored to prevent plateaus at 1.0 (which would render the ordering unstable/random).

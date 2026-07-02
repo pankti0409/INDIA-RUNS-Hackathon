@@ -13,18 +13,18 @@ Below are the average normalized values for key features across the top 100 cand
 
 | Feature Dimension | Average Score in Top 100 |
 | :--- | :--- |
-| Overall Relevance Score | 0.6093 |
-| Hybrid Retrieval Score | 0.8469 |
-| Cross-Encoder Score | 0.6506 |
-| Role-Specific Depth | 0.6455 |
-| Hireability Probability | 0.8213 |
-| Trust Score | 0.7770 |
-| Risk Probability | 0.0112 |
-| Core Skill Match Score | 0.3138 |
-| Title Match Score | 0.9551 |
-| Years of Experience Score | 0.9460 |
-| Career Growth Score | 0.4340 |
-| GitHub Activity Score | 0.4896 |
+| Overall Relevance Score | 0.7591 |
+| Hybrid Retrieval Score | 0.8526 |
+| Cross-Encoder Score | 0.6963 |
+| Role-Specific Depth | 0.6855 |
+| Hireability Probability | 0.8365 |
+| Trust Score | 0.7870 |
+| Risk Probability | 0.0167 |
+| Core Skill Match Score | 0.6932 |
+| Title Match Score | 0.9451 |
+| Years of Experience Score | 0.9527 |
+| Career Growth Score | 0.4397 |
+| GitHub Activity Score | 0.5228 |
 
 ## Sensitivity Audit Insights
 1. **Relevance Multipliers**: Relevance scores drive the base score, but notice period and activity decay quickly eliminate non-viable candidates.

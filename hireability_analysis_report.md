@@ -4,19 +4,19 @@ This report analyzes the behavioral signals of the top 100 ranked candidates.
 
 ## Summary Metrics
 
-- **Open to Work Flag**: 64 / 100 (64.0%)
-- **Average Notice Period**: 60.6 days
-- **Average Response Time**: 49.0 hours
-- **Average Hireability Probability**: 0.8213
+- **Open to Work Flag**: 66 / 100 (66.0%)
+- **Average Notice Period**: 62.4 days
+- **Average Response Time**: 47.4 hours
+- **Average Hireability Probability**: 0.8365
 
 ## Notice Period Distribution
 
 | Notice Period Bucket | Count |
 | :--- | :--- |
-| Immediate (<=15d) | 8 |
-| 1 Month (16-30d) | 26 |
-| 2 Months (31-60d) | 31 |
-| 3 Months (>60d) | 35 |
+| Immediate (<=15d) | 9 |
+| 1 Month (16-30d) | 24 |
+| 2 Months (31-60d) | 29 |
+| 3 Months (>60d) | 38 |
 
 ## Key Insights
 1. **Availability Decay**: Stale/inactive candidates are naturally decayed by their active recency, pushing them down the ranking.
