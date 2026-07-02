@@ -15,15 +15,15 @@ Empirical feature values averaged across the top 100 matched candidates:
 
 | Feature Key | Description | Average Value (Top 100) | Contribution Impact |
 | :--- | :--- | :--- | :--- |
-| `dense_score` | Dense Semantic Cosine | 0.8242 | High base retrieval signal |
-| `bm25_score` | BM25 Lexical Score | 0.1407 | High term keyword frequency |
-| `cross_encoder_score` | Cross-Encoder Score | 0.0366 | Deep contextual query re-ranking |
-| `role_specific_depth_score` | Experience Depth | 0.1990 | Candidate expertise seniority validation |
-| `combined_title_score` | Title Match Score | 0.1983 | Exact and synonym job title matches |
-| `core_skill_score` | Core Skills Match | 0.0178 | Essential required tech stack overlap |
-| `hireability_probability` | Hireability Probability | 0.7365 | Active job search responsiveness |
-| `trust_score` | Trust/Verification Score | 0.5576 | Identity and phone/email connection state |
-| `risk_probability` | Risk/Honeypot Score | 0.1331 | Synthetic and timeline anomaly warning |
+| `dense_score` | Dense Semantic Cosine | 0.4682 | High base retrieval signal |
+| `bm25_score` | BM25 Lexical Score | 0.3728 | High term keyword frequency |
+| `cross_encoder_score` | Cross-Encoder Score | 0.4682 | Deep contextual query re-ranking |
+| `role_specific_depth_score` | Experience Depth | 0.5846 | Candidate expertise seniority validation |
+| `combined_title_score` | Title Match Score | 0.9579 | Exact and synonym job title matches |
+| `core_skill_score` | Core Skills Match | 0.0000 | Essential required tech stack overlap |
+| `hireability_probability` | Hireability Probability | 0.8108 | Active job search responsiveness |
+| `trust_score` | Trust/Verification Score | 0.7593 | Identity and phone/email connection state |
+| `risk_probability` | Risk/Honeypot Score | 0.0123 | Synthetic and timeline anomaly warning |
 
 ## Dynamic Multipliers and Penalty Attribution
 - **Disqualifier Titles Penalty**: Multiplier 0.12x (Applied to non-technical or mismatching roles).

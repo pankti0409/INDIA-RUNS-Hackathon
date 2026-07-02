@@ -1,18 +1,1 @@
-# Senior AI/ML Engineer (Ranking & Retrieval)
-
-## About Redrob
-Redrob is an AI-powered talent assessment and matching platform.
-
-## Requirements
-- 5 to 9 years of professional experience building ML systems.
-- Core required skills: Python, PyTorch, FAISS, Elasticsearch, dense retrieval, cross-encoders, BM25, learning to rank, RAG.
-- Background in search engines, recommendation systems, or information retrieval.
-- Product company background preferred.
-
-## Nice-to-Have
-- Knowledge of MLOps pipelines: Docker, Kubernetes, Triton, model serving.
-- Familiarity with PyTorch, LightGBM, and HuggingFace.
-
-## Location & Environment
-- Location: Gurgaon, Noida, Bangalore, or remote in India.
-- Work mode: Hybrid preferred.
+We are seeking a visionary Senior Software Engineer to serve as the technical anchor and driving force behind our core engineering initiatives. In this role, you will bridge the critical gap between complex, high-level business strategies and robust, production-ready software systems. Your day-to-day focus will center on designing, building, and maintaining highly scalable, secure, and resilient microservices architectures capable of supporting millions of transactions. Beyond writing immaculate, testable code, you will take absolute ownership of the entire software development lifecycle, from initial system topology design to automated deployment pipelines. As a technical leader, you will champion engineering excellence by establishing stringent standards for code quality, automated testing, and comprehensive technical documentation. You will actively diagnose and resolve complex architectural bottlenecks, optimize database performance, and future-proof our infrastructure against rapid user growth. Collaboration is central to this position; you will partner closely with Product Management and DevOps teams to align technical roadmaps with user needs. Furthermore, you will serve as a dedicated mentor to junior and mid-level developers, fostering a culture of continuous learning, psychological safety, and rapid innovation. Ultimately, your expertise will directly shape our technical trajectory, elevate team capabilities, and accelerate the delivery of impactful digital products.

@@ -3,22 +3,22 @@
 This report provides debugging metrics and diagnostic warnings for the candidate ranking cascade.
 
 ## Pipeline Statistics
-- **Candidates Loaded**: 50
-- **Candidates After Retrieval**: 50
-- **Candidates After Reranking**: 50
-- **Candidates After Filtering**: 50
-- **Candidates Returned**: 50
-- **Candidates Exported**: 50
+- **Candidates Loaded**: 100000
+- **Candidates After Retrieval**: 500
+- **Candidates After Reranking**: 500
+- **Candidates After Filtering**: 100
+- **Candidates Returned**: 100
+- **Candidates Exported**: 100
 
 ## Score Distribution Metrics
-- **Mean Score**: 0.1862
-- **Median Score**: 0.1821
-- **Std Dev**: 0.0930
-- **Min Score**: 0.0713
-- **Max Score**: 0.6767
+- **Mean Score**: 0.4639
+- **Median Score**: 0.4269
+- **Std Dev**: 0.0813
+- **Min Score**: 0.3569
+- **Max Score**: 0.6606
 
 ## Automated Heuristic Diagnostics
-- **Score Compression Detected**: No (Spread: 0.6054)
+- **Score Compression Detected**: No (Spread: 0.3037)
 - **Over-Penalization Detected**: No (Average score below 10%)
 - **Weak Features Detected**: No
 - **Poor Separation Detected**: No

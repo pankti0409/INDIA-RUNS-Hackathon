@@ -8,15 +8,15 @@ This report audits the ranking order and candidate scoring properties to ensure 
 
 ## Top 100 Score Statistics
 
-- **Maximum Score**: 0.6767
-- **Minimum Score**: 0.0713
-- **Score Spread Range**: 0.6054
-- **Mean Score**: 0.1862
-- **Standard Deviation**: 0.0930
+- **Maximum Score**: 0.6606
+- **Minimum Score**: 0.3569
+- **Score Spread Range**: 0.3037
+- **Mean Score**: 0.4639
+- **Standard Deviation**: 0.0813
 
 ## Score Compression Analysis
 Score compression is monitored to prevent plateaus at 1.0 (which would render the ordering unstable/random).
-- Number of candidates at the maximum score: 1 / 50
+- Number of candidates at the maximum score: 1 / 100
 
 ## NDCG Sensitivity Recommendation
 - The cascade filter has successfully separated candidates with distinct tiers, keeping a smooth spread between ML Specialists and Software Engineers.
