@@ -6,40 +6,41 @@ This report outlines the demographic, location, and educational distributions of
 
 | Country | Count |
 | :--- | :--- |
-| India | 36 |
+| India | 85 |
+| Canada | 4 |
 | USA | 4 |
-| UAE | 3 |
-| UK | 2 |
+| Germany | 3 |
 | Australia | 2 |
-| Germany | 2 |
-| Canada | 1 |
+| UK | 1 |
+| Singapore | 1 |
 
 ### City Breakdown (India Candidates)
 
 | City | Count |
 | :--- | :--- |
-| Other | 35 |
-| Hyderabad | 5 |
-| Gurgaon | 5 |
-| Noida | 2 |
-| Bangalore | 1 |
-| Pune | 1 |
-| Delhi | 1 |
+| Other | 67 |
+| Noida | 10 |
+| Gurgaon | 7 |
+| Pune | 7 |
+| Mumbai | 3 |
+| Delhi | 2 |
+| Hyderabad | 2 |
+| Bangalore | 2 |
 
 ## Experience Distribution (YoE)
 
 | Experience Level | Count |
 | :--- | :--- |
-| < 5 years (Junior) | 15 |
-| 5-9 years (Ideal) | 21 |
-| > 9 years (Senior) | 14 |
+| < 5 years (Junior) | 32 |
+| 5-9 years (Ideal) | 66 |
+| > 9 years (Senior) | 2 |
 
 ## Education Tier Distribution
 
 | Tier | Count |
 | :--- | :--- |
-| TIER_1 | 5 |
-| TIER_2 | 10 |
-| TIER_3 | 36 |
-| TIER_4 | 21 |
+| TIER_1 | 66 |
+| TIER_2 | 54 |
+| TIER_3 | 21 |
+| TIER_4 | 1 |
 | UNKNOWN | 0 |

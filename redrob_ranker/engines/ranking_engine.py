@@ -1,7 +1,9 @@
 """
-ranking_engine.py — Cascade Reranking Engine with Cross-Encoder
+ranking_engine.py — Cascade Reranking Engine with Cross-Encoder + LTR
 Fuses dense semantic similarity & BM25 lexical similarity to retrieve top candidates,
-reranks them using a Cross-Encoder, and scores them using the final multiplicative formula.
+reranks them using a Cross-Encoder, scores with compute_final_score, and optionally
+blends with LightGBM LambdaMART for evidence-driven Learning-to-Rank (plan.md Block 2).
+SHAP explanations are attached to each candidate's feature dict (plan.md Block 8).
 """
 import logging
 import math
@@ -11,6 +13,20 @@ import numpy as np
 from redrob_ranker.config import TOP_CANDIDATES
 from redrob_ranker.engines.feature_engine import extract_features
 from redrob_ranker.engines.semantic_engine import get_engine, JD_TEXT, _candidate_to_text
+
+# LTR engine (graceful import)
+try:
+    from redrob_ranker.engines.ltr_engine import get_ltr_engine
+    HAS_LTR = True
+except Exception:  # pragma: no cover
+    HAS_LTR = False
+
+# SHAP engine
+try:
+    from redrob_ranker.engines.shap_engine import batch_explain_candidates
+    HAS_SHAP_ENGINE = True
+except Exception:  # pragma: no cover
+    HAS_SHAP_ENGINE = False
 
 logger = logging.getLogger(__name__)
 
@@ -464,6 +480,50 @@ def rank_candidates(
     # ── Step 9: Listwise Score Calibration ──────────────────────────────
     # Ensure score gaps between adjacent candidates are proportional to feature gaps
     scored_candidates = _listwise_calibrate(scored_candidates)
+
+    # ── Step 10: LTR Score Blending (when model is trained) ─────────────
+    # When a trained LightGBM LambdaMART model is available, blend its score
+    # with the heuristic compute_final_score for improved ranking quality.
+    # Blend: 70% LTR + 30% heuristic (per plan.md Block 2 §18)
+    if HAS_LTR:
+        try:
+            ltr_engine = get_ltr_engine()
+            if ltr_engine.is_trained():
+                ltr_fds = [feat for _, feat, _ in scored_candidates]
+                ltr_cids = [c.get("candidate_id", "") for c, _, _ in scored_candidates]
+                ltr_scores = ltr_engine.predict(ltr_fds)
+
+                # Normalize LTR scores to [0, 1] within the candidate pool
+                ltr_min, ltr_max = ltr_scores.min(), ltr_scores.max()
+                if ltr_max > ltr_min:
+                    ltr_norm = (ltr_scores - ltr_min) / (ltr_max - ltr_min)
+                else:
+                    ltr_norm = ltr_scores
+
+                blended = []
+                for i, (c, feat, heuristic_score) in enumerate(scored_candidates):
+                    blended_score = 0.70 * float(ltr_norm[i]) + 0.30 * heuristic_score
+                    feat["ltr_score"] = float(ltr_norm[i])
+                    feat["ltr_blended_score"] = round(blended_score, 6)
+                    blended.append((c, feat, blended_score))
+
+                blended.sort(key=lambda x: (-x[2], x[0].get("candidate_id", "")))
+                scored_candidates = blended
+                logger.info("LTR blending applied (70% LTR + 30% heuristic)")
+        except Exception as ltr_exc:
+            logger.warning(f"LTR blending failed (continuing with heuristic): {ltr_exc}")
+
+    # ── Step 11: SHAP Explanations ──────────────────────────────────────
+    # Attach recruiter-quality explanations to each candidate's feature dict.
+    if HAS_SHAP_ENGINE:
+        try:
+            all_fds = [feat for _, feat, _ in scored_candidates]
+            explanations = batch_explain_candidates(all_fds, top_k=5)
+            for (c, feat, score), expl in zip(scored_candidates, explanations):
+                feat["explanation"] = expl
+            logger.info(f"SHAP/rule-based explanations generated for {len(explanations)} candidates")
+        except Exception as shap_exc:
+            logger.warning(f"Explanation generation failed (non-critical): {shap_exc}")
 
     # Slice to top_n real candidates (no dummies — padding is done at write time)
     real_top = scored_candidates[:top_n]

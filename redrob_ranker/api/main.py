@@ -639,16 +639,15 @@ async def hackathon_rank(
         # top_ranked is NOT modified — only the on-disk CSV gets dummy rows.
         write_submission(top_ranked, "./submission.csv")
     except Exception as e:
-        logger.error(f"Writing submission CSV failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate submission CSV: {e}")
-        
-    # ── Step 6: Generate remaining 5 Validation Reports ──────────────
+        logger.warning(f"Writing submission CSV failed: {e}")
+
+    # ── Step 6: Generate remaining Validation Reports ────────────────
     try:
         from redrob_ranker.utils.report_generator import generate_validation_reports
         generate_validation_reports(top_ranked, len(candidates))
     except Exception as e:
         logger.warning(f"Failed to generate validation reports: {e}")
-        
+
     # ── Step 7: Load report contents for the response ───────────────
     reports = {}
     for report_key, file_name in [
@@ -660,20 +659,27 @@ async def hackathon_rank(
         ("feature_importance", "feature_contribution_report.md"),
         ("ranking_diagnostics", "ranking_diagnostics_report.md"),
     ]:
-
         report_path = Path(file_name)
         if report_path.exists():
             reports[report_key] = report_path.read_text(encoding="utf-8")
         else:
             reports[report_key] = f"Report {file_name} was not generated."
-            
+
     # Format results — top_ranked contains ONLY real candidates (no dummy padding)
     from redrob_ranker.utils.explanation_engine import generate_reasoning
+
     results = []
     for idx, (c, feat, score) in enumerate(top_ranked):
         cid = c.get("candidate_id", "UNKNOWN")
         rank = idx + 1
         reasoning = generate_reasoning(c, feat, score, rank)
+        
+        # Build SHAP/rule-based explanation if available
+        explanation = feat.get("explanation", None)
+        explanation_summary = ""
+        if explanation:
+            explanation_summary = explanation.get("summary", "")
+
         results.append({
             "candidate_id": cid,
             "rank": rank,
@@ -681,6 +687,10 @@ async def hackathon_rank(
             "name": c.get("profile", {}).get("anonymized_name", "Unknown"),
             "title": c.get("profile", {}).get("current_title", ""),
             "reasoning": reasoning,
+            "explanation_summary": explanation_summary,
+            "explanation": explanation,
+            "ltr_score": round(feat.get("ltr_score", -1.0), 4),
+            "ltr_blended_score": round(feat.get("ltr_blended_score", score), 6),
             "score_breakdown": {
                 "title_score": round(feat.get("combined_title_score", 0), 4),
                 "skill_score": round(feat.get("core_skill_score", 0), 4),
@@ -689,6 +699,12 @@ async def hackathon_rank(
                 "education_score": round(feat.get("education_score", 0), 4),
                 "github_score": round(feat.get("github_score", 0), 4),
                 "honeypot_probability": round(feat.get("honeypot_probability", 0), 4),
+                # New primitive features
+                "evidence_density": round(feat.get("evidence_density_score", 0), 4),
+                "skill_cluster_coverage": round(feat.get("skill_cluster_coverage", 0), 4),
+                "resp_depth_score": round(feat.get("resp_depth_score", 0), 4),
+                "architecture_exp": round(feat.get("architecture_exp_score", 0), 4),
+                "feature_confidence": round(feat.get("feature_confidence_score", 0), 4),
             },
         })
         
@@ -702,4 +718,92 @@ async def hackathon_rank(
     }
 
 
+@app.post("/api/ltr/train")
+async def train_ltr_model(file: UploadFile = File(...)):
+    """
+    Train a LightGBM LambdaMART model from a ranked candidates JSON file.
 
+    Accepts the same candidate JSON format as /api/rank.
+    Uses the current heuristic scores as training labels, then persists the model.
+    Future /api/rank calls will blend LTR scores (70%) with heuristic scores (30%).
+
+    Returns: training metadata dict.
+    """
+    try:
+        from redrob_ranker.engines.ltr_engine import get_ltr_engine
+        from redrob_ranker.engines.ranking_engine import rank_candidates
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=f"LTR engine or ranking engine unavailable: {e}")
+
+    content = await file.read()
+    try:
+        payload = json.loads(content.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+
+    candidates = payload if isinstance(payload, list) else payload.get("candidates", [])
+    if not candidates:
+        raise HTTPException(status_code=400, detail="No candidates provided")
+
+    # Run the ranking engine to get the full feature dicts and heuristic scores
+    try:
+        ranked_results = rank_candidates(candidates, top_n=len(candidates))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ranking execution failed during training preparation: {e}")
+
+    feature_dicts = [feat for _, feat, _ in ranked_results]
+    final_scores = [score for _, _, score in ranked_results]
+
+    ltr_engine = get_ltr_engine()
+    result = ltr_engine.train(feature_dicts, final_scores=final_scores)
+
+    if result.get("status") == "failed":
+        raise HTTPException(status_code=500, detail=f"LTR training failed: {result.get('error')}")
+
+    return {
+        "status": result.get("status", "unknown"),
+        "n_candidates": result.get("n_candidates", 0),
+        "n_features": result.get("n_features", 0),
+        "trained_at": result.get("trained_at", ""),
+        "message": "Model trained and saved with balanced labels. Future ranking calls will use LTR blending.",
+    }
+
+
+
+@app.get("/api/ltr/status")
+def ltr_status():
+    """Return current LTR model status and metadata."""
+    try:
+        from redrob_ranker.engines.ltr_engine import get_ltr_engine
+        engine = get_ltr_engine()
+        meta = engine.metadata()
+        return {
+            "model_trained": engine.is_trained(),
+            "metadata": meta,
+            "n_features": len(engine.feature_names),
+            "message": "LTR model ready" if engine.is_trained() else "No trained model — using heuristic scoring",
+        }
+    except Exception as e:
+        return {"model_trained": False, "error": str(e)}
+
+
+@app.get("/api/ltr/importance")
+def ltr_feature_importance():
+    """Return feature importance from the trained LTR model."""
+    try:
+        from redrob_ranker.engines.ltr_engine import get_ltr_engine
+        engine = get_ltr_engine()
+        if not engine.is_trained():
+            return {"model_trained": False, "importance": {}}
+        gain = engine.get_feature_importance("gain")
+        split = engine.get_feature_importance("split")
+        top_features = sorted(gain.items(), key=lambda x: x[1], reverse=True)[:30]
+        return {
+            "model_trained": True,
+            "top_features_by_gain": [
+                {"feature": fn, "gain_pct": round(gv * 100, 2), "split_pct": round(split.get(fn, 0) * 100, 2)}
+                for fn, gv in top_features
+            ],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

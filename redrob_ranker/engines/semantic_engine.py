@@ -28,6 +28,14 @@ except ImportError:
     HAS_ST = False
     logger.warning("sentence-transformers not installed — semantic retrieval will be unavailable")
 
+# Graceful rank_bm25 import (plan.md Block 3 — proper BM25 retrieval)
+try:
+    from rank_bm25 import BM25Okapi
+    HAS_BM25_LIB = True
+except ImportError:  # pragma: no cover
+    HAS_BM25_LIB = False
+    logger.warning("rank_bm25 not installed — using built-in vectorized BM25 fallback")
+
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
 CROSS_ENCODER_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 CACHE_DIR = Path("./cache")
@@ -97,6 +105,133 @@ def _candidate_to_text(candidate: dict) -> str:
         parts.append(pub_text)
 
     return " ".join(p for p in parts if p).strip()
+
+
+# ---------------------------------------------------------------------------
+# Reciprocal Rank Fusion (plan.md Block 3 §10)
+# ---------------------------------------------------------------------------
+
+def reciprocal_rank_fusion(
+    ranked_lists: List[List[str]],
+    k: int = 60,
+) -> Dict[str, float]:
+    """
+    Combine multiple ranked candidate lists using Reciprocal Rank Fusion.
+
+    RRF score(d) = Σ  1 / (k + rank(d, list_i))
+
+    Parameters
+    ----------
+    ranked_lists : list of candidate_id lists, ordered best-first
+    k            : RRF smoothing constant (default 60 per Cormack et al.)
+
+    Returns
+    -------
+    Dict mapping candidate_id → RRF score (higher = better)
+    """
+    rrf_scores: Dict[str, float] = {}
+    for ranked in ranked_lists:
+        for rank, cid in enumerate(ranked, start=1):
+            rrf_scores[cid] = rrf_scores.get(cid, 0.0) + 1.0 / (k + rank)
+    return rrf_scores
+
+
+def bm25_retrieve(
+    query: str,
+    candidates: List[dict],
+    top_k: Optional[int] = None,
+) -> Dict[str, float]:
+    """
+    Full BM25Okapi retrieval over candidate corpus using rank_bm25.
+
+    Falls back to built-in vectorized BM25 when rank_bm25 is unavailable.
+
+    Parameters
+    ----------
+    query      : JD query string
+    candidates : full candidate list
+    top_k      : if set, return only the top_k candidates
+
+    Returns
+    -------
+    Dict mapping candidate_id → normalized BM25 score
+    """
+    if not candidates:
+        return {}
+
+    cand_ids = [c.get("candidate_id", str(i)) for i, c in enumerate(candidates)]
+    texts = [_candidate_to_text(c) for c in candidates]
+    tokenized = [_tokenize(t) for t in texts]
+
+    if HAS_BM25_LIB:
+        bm25 = BM25Okapi(tokenized)
+        query_tokens = _tokenize(query)
+        raw_scores = np.array(bm25.get_scores(query_tokens), dtype=np.float32)
+    else:
+        # Fallback: simple TF-IDF-like scoring against JD_TOKENS
+        query_tokens = set(_tokenize(query))
+        raw_scores = np.array(
+            [sum(1 for t in _tokenize(text) if t in query_tokens) for text in texts],
+            dtype=np.float32,
+        )
+
+    max_score = raw_scores.max()
+    if max_score > 0:
+        normalized = raw_scores / max_score
+    else:
+        normalized = raw_scores
+
+    scores = {cid: float(normalized[i]) for i, cid in enumerate(cand_ids)}
+
+    if top_k is not None:
+        sorted_ids = sorted(scores, key=scores.__getitem__, reverse=True)[:top_k]
+        scores = {cid: scores[cid] for cid in sorted_ids}
+
+    return scores
+
+
+def hybrid_retrieve_rrf(
+    query: str,
+    candidates: List[dict],
+    dense_scores: Optional[Dict[str, float]] = None,
+    top_k: Optional[int] = None,
+    rrf_k: int = 60,
+) -> Dict[str, float]:
+    """
+    Hybrid retrieval fusing BM25 and dense scores via Reciprocal Rank Fusion.
+
+    This provides more robust candidate discovery than a fixed linear blend
+    because RRF is less sensitive to score magnitude differences between systems.
+
+    Parameters
+    ----------
+    query        : JD text
+    candidates   : full candidate pool
+    dense_scores : optional pre-computed dense similarity scores (cid → score)
+    top_k        : max candidates to return
+    rrf_k        : RRF smoothing constant
+
+    Returns
+    -------
+    Dict mapping candidate_id → RRF fusion score
+    """
+    bm25_scores = bm25_retrieve(query, candidates)
+
+    # Sort each retrieval system's results independently
+    bm25_ranked = sorted(bm25_scores, key=bm25_scores.__getitem__, reverse=True)
+    ranked_lists = [bm25_ranked]
+
+    if dense_scores:
+        dense_ranked = sorted(dense_scores, key=dense_scores.__getitem__, reverse=True)
+        ranked_lists.append(dense_ranked)
+
+    fused = reciprocal_rank_fusion(ranked_lists, k=rrf_k)
+
+    if top_k is not None:
+        sorted_ids = sorted(fused, key=fused.__getitem__, reverse=True)[:top_k]
+        fused = {cid: fused[cid] for cid in sorted_ids}
+
+    return fused
 
 
 

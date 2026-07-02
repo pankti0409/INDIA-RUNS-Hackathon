@@ -1,7 +1,22 @@
 """
 feature_engine.py — Extract ranking features per candidate
 All features normalized to [0, 1] range.
-Implements: Priority 1 (Role-Specific Candidate Intelligence), Priority 5 (Trust Engine), Priority 8 (Remove Step Functions).
+
+Implements:
+  Priority 1  — Role-Specific Candidate Intelligence (8 depth dimensions)
+  Priority 5  — Trust Engine
+  Priority 8  — Remove Step Functions
+  Block 1     — 115+ primitive evidence features (title, skill, experience,
+                responsibility, interaction, temporal, confidence)
+
+Feature categories generated:
+  • Title features (exact match, seniority gap, hierarchy, role family)
+  • Skill features (freshness, duration-weighted, diversity, rarity, cluster coverage)
+  • Experience features (architecture, deployment, ownership, mentoring exp)
+  • Responsibility verb features (designed, led, owned, optimized, scaled, mentored, architected)
+  • Interaction features (title×skills, projects×leadership, experience×company)
+  • Temporal features (skill recency, career momentum, tech adoption)
+  • Evidence confidence features (density, diversity, consistency)
 """
 import logging
 import math
@@ -407,6 +422,296 @@ def compute_github_score(signals: dict) -> float:
 
 
 # ─────────────────────────────────────────────────────────────
+# PRIMITIVE EVIDENCE FEATURES (Block 1 — plan.md §3–§12)
+# ─────────────────────────────────────────────────────────────
+
+# Responsibility action verbs mapped to evidence categories (plan.md §11)
+_RESP_VERBS: Dict[str, List[str]] = {
+    "designed": ["designed", "architected", "conceptualized", "specified", "created"],
+    "led":       ["led ", "led the", "leading", "managed", "headed", "drove", "spearheaded"],
+    "owned":     ["owned", "ownership", "end-to-end", "sole engineer", "responsible for"],
+    "optimized": ["optimized", "reduced", "improved latency", "improved throughput", "sped up", "performance"],
+    "scaled":    ["scaled", "scaling", "sharding", "distributed", "horizontal", "millions", "billion"],
+    "mentored":  ["mentored", "mentoring", "coached", "guided", "trained engineers"],
+    "architected":["architected", "architecture", "system design", "designed the", "blue-print"],
+}
+
+# Clustered skill groups for cluster coverage (plan.md §4 skill features)
+_SKILL_CLUSTERS: Dict[str, set] = {
+    "retrieval":     {"faiss", "elasticsearch", "opensearch", "milvus", "weaviate", "qdrant", "pinecone", "bm25", "ann", "vector", "dense retrieval"},
+    "ranking":       {"learning to rank", "ltr", "lambdamart", "ranknet", "ndcg", "mrr", "re-ranking", "reranking"},
+    "ml_frameworks": {"pytorch", "tensorflow", "jax", "keras", "scikit-learn", "xgboost", "lightgbm"},
+    "embeddings":    {"sentence-transformers", "bge", "e5", "openai", "embeddings", "bi-encoder", "cross-encoder"},
+    "infrastructure":{"kubernetes", "docker", "mlflow", "kubeflow", "airflow", "spark", "kafka", "redis"},
+    "languages":     {"python", "java", "scala", "go", "rust", "c++", "sql"},
+}
+
+
+def _compute_primitive_features(
+    skills: List[dict],
+    career_history: List[dict],
+    profile: dict,
+    education: List[dict],
+    features_so_far: Dict[str, float],
+) -> Dict[str, float]:
+    """
+    Compute ~50 new primitive evidence features per plan.md Block 1.
+
+    These are primitive signals (not composites) that expose raw evidence
+    for the LTR model to learn interactions automatically.
+    """
+    pf: Dict[str, float] = {}
+
+    # ── A. TITLE PRIMITIVE FEATURES ────────────────────────────────────────
+    title_lower = _normalize_text(profile.get("current_title", ""))
+
+    # Title exact match vs JD target role
+    jd_role_tokens = {"search", "ranking", "retrieval", "recommendation", "ml", "nlp", "ai"}
+    title_tokens = set(re.findall(r"\b[a-z]+\b", title_lower))
+    pf["title_exact_match"] = 1.0 if any(t in title_tokens for t in jd_role_tokens) else 0.0
+
+    # Title normalized match (fuzzy via token overlap)
+    overlap = len(title_tokens & jd_role_tokens)
+    pf["title_normalized_match"] = min(1.0, overlap / max(1, len(jd_role_tokens)))
+
+    # Seniority gap — how close is the seniority to "senior" / "staff"
+    senior_words = {"senior", "staff", "principal", "lead", "manager", "director", "fellow"}
+    junior_words = {"junior", "associate", "intern", "entry"}
+    if any(w in title_lower for w in senior_words):
+        pf["title_seniority_gap"] = 0.0   # 0 gap = perfect match
+    elif any(w in title_lower for w in junior_words):
+        pf["title_seniority_gap"] = 1.0   # large gap
+    else:
+        pf["title_seniority_gap"] = 0.4   # mid-level
+
+    # Role family match: does any past job match the target role family?
+    tier = features_so_far.get("title_score", 0.5)
+    pf["title_role_family_match"] = 1.0 if tier >= 0.80 else (0.5 if tier >= 0.50 else 0.0)
+
+    # Hierarchy score: current role tier mapped to 0-1
+    tier_map = {"tier_1": 1.0, "tier_2": 0.85, "tier_3": 0.55, "tier_4": 0.20, "tier_5": 0.0}
+    pf["title_hierarchy_score"] = tier_map.get(features_so_far.get("title_tier", "tier_3"), 0.55)
+
+    # ── B. SKILL PRIMITIVE FEATURES ────────────────────────────────────────
+    skill_names_norm = [_normalize_skill_name(s.get("name", "")) for s in skills]
+    skill_set = set(skill_names_norm)
+
+    # Skill freshness: average recency weight of required skills (REFERENCE_DATE window)
+    freshness_scores = []
+    for s in skills:
+        name_norm = _normalize_skill_name(s.get("name", ""))
+        if name_norm in REQUIRED_SKILLS or name_norm in PREFERRED_SKILLS:
+            last_used_str = s.get("last_used", "")
+            if last_used_str:
+                days = _days_since(last_used_str[:10])
+                # Decay: full score for last 12 months, 50% at 36 months
+                freshness_scores.append(max(0.0, 1.0 - days / 1095.0))
+            else:
+                freshness_scores.append(0.5)  # unknown recency
+    pf["skill_freshness_score"] = round(sum(freshness_scores) / max(1, len(freshness_scores)), 4) if freshness_scores else 0.5
+
+    # Skill duration weighted: normalize total months on required skills
+    total_req_months = sum(
+        min(s.get("duration_months", 0), 60)
+        for s in skills
+        if _normalize_skill_name(s.get("name", "")) in REQUIRED_SKILLS
+    )
+    pf["skill_duration_weighted"] = min(1.0, total_req_months / 120.0)
+
+    # Skill diversity: how many distinct top-level families covered
+    families = {get_skill_family(s) for s in skill_names_norm} - {"other"}
+    pf["skill_diversity_score"] = min(1.0, len(families) / 6.0)
+
+    # Skill density: skill count vs. total career months (skills per year)
+    total_career_months = sum(j.get("duration_months", 0) for j in career_history)
+    career_years = max(1, total_career_months / 12.0)
+    pf["skill_density_score"] = min(1.0, len(skills) / (career_years * 4.0))
+
+    # Skill rarity: proportion of non-common skills (unique specializations)
+    common_skills = {"python", "java", "sql", "git", "linux", "aws", "docker"}
+    rare_count = sum(1 for s in skill_set if s not in common_skills)
+    pf["skill_rarity_score"] = min(1.0, rare_count / 8.0)
+
+    # Missing critical skills ratio
+    n_required = len(REQUIRED_SKILLS)
+    n_matched = len(skill_set & REQUIRED_SKILLS)
+    pf["missing_critical_skills_ratio"] = round(1.0 - (n_matched / max(1, n_required)), 4)
+
+    # Adjacent skill score: skills adjacent to required ones via ontology families
+    adjacent_skills = {"information retrieval", "recommendation system", "knowledge graph",
+                       "nlp", "transformers", "bert", "gpt", "llm", "data science",
+                       "statistical modeling", "distributed systems", "kafka", "spark"}
+    pf["adjacent_skill_score"] = min(1.0, len(skill_set & adjacent_skills) / 5.0)
+
+    # Skill cluster coverage: how many of the 6 key clusters are covered
+    clusters_hit = sum(
+        1 for cluster_skills in _SKILL_CLUSTERS.values()
+        if skill_set & cluster_skills
+    )
+    pf["skill_cluster_coverage"] = round(clusters_hit / len(_SKILL_CLUSTERS), 4)
+
+    # ── C. EXPERIENCE PRIMITIVE FEATURES ───────────────────────────────────
+    arch_keywords = ["architect", "architecture", "system design", "designed", "distributed system", "infra"]
+    deploy_keywords = ["deployed", "deployment", "serving", "production", "shipped", "launched", "live"]
+    oss_keywords = ["open source", "github", "open-source", "contributed to", "maintainer", "committer"]
+    ownership_keywords = ["owned", "ownership", "responsible for", "end-to-end", "from scratch", "sole engineer"]
+    mentoring_keywords = ["mentored", "mentoring", "coached", "guided", "trained engineers", "onboarded"]
+
+    arch_months = deploy_months = oss_months = ownership_months = mentoring_months = 0.0
+    total_months = max(1, sum(j.get("duration_months", 0) for j in career_history))
+
+    for job in career_history:
+        desc = (job.get("description", "") + " " + job.get("title", "")).lower()
+        dur = float(job.get("duration_months", 0))
+        if any(kw in desc for kw in arch_keywords):        arch_months += dur
+        if any(kw in desc for kw in deploy_keywords):      deploy_months += dur
+        if any(kw in desc for kw in oss_keywords):         oss_months += dur
+        if any(kw in desc for kw in ownership_keywords):   ownership_months += dur
+        if any(kw in desc for kw in mentoring_keywords):   mentoring_months += dur
+
+    pf["architecture_exp_score"]  = min(1.0, arch_months / 36.0)
+    pf["deployment_exp_score"]    = min(1.0, deploy_months / 24.0)
+    pf["open_source_exp_score"]   = min(1.0, oss_months / 24.0)
+    pf["ownership_exp_score"]     = min(1.0, ownership_months / 24.0)
+    pf["mentoring_exp_score"]     = min(1.0, mentoring_months / 18.0)
+
+    # Relevant experience ratio: months in AI/ML roles / total months
+    ai_kws = ["ml", "machine learning", "ai", "data scien", "nlp", "search", "ranking", "recommendation", "retrieval"]
+    ai_months = sum(
+        j.get("duration_months", 0)
+        for j in career_history
+        if any(kw in (j.get("title", "") + j.get("description", "")).lower() for kw in ai_kws)
+    )
+    pf["relevant_exp_ratio"] = min(1.0, ai_months / max(1, total_months))
+
+    # Career stability: inverse of job-hopping rate (jobs per year)
+    n_jobs = max(1, len(career_history))
+    jobs_per_year = n_jobs / max(1, total_months / 12.0)
+    pf["career_stability_score"] = min(1.0, 1.0 / (1.0 + max(0, jobs_per_year - 1.2)))
+
+    # Promotion velocity: how quickly they advanced (seniority jumps per year)
+    senior_titles_count = sum(
+        1 for j in career_history
+        if any(sw in j.get("title", "").lower() for sw in senior_words)
+    )
+    pf["promotion_velocity_score"] = min(1.0, senior_titles_count / max(1, career_years * 0.5))
+
+    # ── D. RESPONSIBILITY VERB FEATURES (plan.md §11) ───────────────────────
+    all_descriptions = " ".join(
+        (j.get("description", "") + " " + j.get("title", "")).lower()
+        for j in career_history
+    )
+    for verb_key, verb_list in _RESP_VERBS.items():
+        hits = sum(1 for vw in verb_list if vw in all_descriptions)
+        pf[f"resp_{verb_key}_freq"] = min(1.0, hits / 3.0)
+
+    # Aggregate responsibility depth
+    verb_keys = list(_RESP_VERBS.keys())
+    pf["resp_depth_score"] = round(
+        sum(pf.get(f"resp_{k}_freq", 0) for k in verb_keys) / len(verb_keys), 4
+    )
+
+    # ── E. INTERACTION FEATURES (plan.md §12) ───────────────────────────────
+    # These expose multiplicative evidence for the LTR model
+    title_s = features_so_far.get("combined_title_score", 0.5)
+    skills_s = features_so_far.get("core_skill_score", 0.0)
+    proj_s  = features_so_far.get("project_complexity_score", 0.0)
+    lead_s  = features_so_far.get("leadership_evidence_score", 0.0)
+    exp_s   = features_so_far.get("yoe_score", 0.5)
+    co_s    = features_so_far.get("company_quality_score", 0.4)
+    embed_s = features_so_far.get("semantic_similarity_score", 0.0)
+
+    pf["title_x_skills"]         = round(title_s * skills_s, 4)
+    pf["projects_x_leadership"]  = round(proj_s * lead_s, 4)
+    pf["experience_x_company"]   = round(exp_s * co_s, 4)
+    pf["embedding_x_experience"] = round(embed_s * exp_s, 4)
+
+    # ── F. TEMPORAL FEATURES (plan.md §9) ───────────────────────────────────
+    # Skill recency: how recently any required skill was used
+    req_recency = [
+        _days_since(s.get("last_used", ""))
+        for s in skills
+        if _normalize_skill_name(s.get("name", "")) in REQUIRED_SKILLS
+        and s.get("last_used", "")
+    ]
+    if req_recency:
+        min_days = min(req_recency)
+        pf["skill_recency_score"] = round(max(0.0, 1.0 - min_days / 730.0), 4)
+    else:
+        pf["skill_recency_score"] = 0.3
+
+    # Technology adoption rate: modern tech keywords (post-2020 era)
+    modern_tech_kws = [
+        "llm", "gpt", "rag", "langchain", "vector database", "bge", "e5",
+        "vllm", "triton", "onnx", "mlflow", "dbt", "ray", "rust",
+    ]
+    modern_hits = sum(1 for kw in modern_tech_kws if kw in all_descriptions)
+    pf["tech_adoption_rate"] = min(1.0, modern_hits / 4.0)
+
+    # Career momentum: recent job (last 2 years) skill score vs overall
+    recent_descriptions = " ".join(
+        j.get("description", "").lower()
+        for j in career_history
+        if j.get("is_current") or _days_since(j.get("end_date", "")) < 730
+    )
+    recent_req_hits = sum(1 for kw in REQUIRED_SKILLS if kw in recent_descriptions)
+    overall_req_hits = sum(1 for kw in REQUIRED_SKILLS if kw in all_descriptions)
+    if overall_req_hits > 0:
+        pf["career_momentum_score"] = min(1.0, recent_req_hits / max(1, overall_req_hits))
+    else:
+        pf["career_momentum_score"] = 0.0
+
+    # Recent AI activity
+    recent_ai_hits = sum(1 for kw in ["llm", "rag", "vector", "embedding", "gpt", "ai"] if kw in recent_descriptions)
+    pf["recent_ai_activity"] = min(1.0, recent_ai_hits / 3.0)
+
+    # ── G. EVIDENCE CONFIDENCE FEATURES (plan.md §15, §16) ─────────────────
+    # Evidence density: count of independent evidence sources
+    evidence_sources = [
+        min(1, len(skills)) > 0,
+        min(1, len(career_history)) > 0,
+        min(1, len(education)) > 0,
+        features_so_far.get("has_assessments", 0) > 0,
+        features_so_far.get("github_score", 0) > 0.3,
+        features_so_far.get("production_at_scale", 0) > 0,
+    ]
+    pf["evidence_density_score"] = round(sum(evidence_sources) / len(evidence_sources), 4)
+
+    # Evidence diversity: how many distinct category types have strong signals
+    strong_signals = [
+        features_so_far.get("core_skill_score", 0) > 0.4,
+        pf.get("architecture_exp_score", 0) > 0.3,
+        pf.get("resp_led_freq", 0) > 0.3,
+        features_so_far.get("project_complexity_score", 0) > 0.3,
+        features_so_far.get("education_score", 0) > 0.6,
+        features_so_far.get("has_assessments", 0) > 0,
+        pf.get("open_source_exp_score", 0) > 0.2,
+    ]
+    pf["evidence_diversity_score"] = round(sum(strong_signals) / len(strong_signals), 4)
+
+    # Evidence consistency: do skills, projects, and responsibilities all tell the same story?
+    # (convergent evidence = higher confidence)
+    skill_relevance = features_so_far.get("core_skill_score", 0)
+    proj_relevance  = features_so_far.get("project_relevance_score", 0)
+    role_relevance  = features_so_far.get("role_specific_depth_score", 0)
+    vals = [skill_relevance, proj_relevance, role_relevance]
+    mean_val = sum(vals) / max(1, len(vals))
+    variance = sum((v - mean_val) ** 2 for v in vals) / max(1, len(vals))
+    # Low variance + high mean = consistent evidence
+    pf["evidence_consistency_score"] = round(mean_val * (1.0 - min(1.0, variance * 4)), 4)
+
+    # Overall feature confidence (aggregates all confidence signals)
+    pf["feature_confidence_score"] = round(
+        0.40 * pf["evidence_density_score"]
+        + 0.30 * pf["evidence_diversity_score"]
+        + 0.30 * pf["evidence_consistency_score"],
+        4,
+    )
+
+    return pf
+
+
+# ─────────────────────────────────────────────────────────────
 # ROLE-SPECIFIC CANDIDATE INTELLIGENCE ENGINE (Priority 1)
 # ─────────────────────────────────────────────────────────────
 
@@ -795,5 +1100,15 @@ def extract_features(
         features.setdefault("jd_skill_exact_coverage", 0.0)
         features.setdefault("jd_skill_soft_coverage", 0.0)
         features.setdefault("jd_domain_coverage", 0.0)
+
+    # ── 20. Primitive Evidence Features (Block 1 — ~50 new features) ─────────
+    primitive = _compute_primitive_features(
+        skills,
+        career_history,
+        profile,
+        education,
+        features,
+    )
+    features.update(primitive)
 
     return features

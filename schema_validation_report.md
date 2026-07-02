@@ -4,8 +4,8 @@ This report outlines the structural alignment of the ingested candidate profiles
 
 ## Summary Metrics
 
-- **Total Candidate Profiles Ingested**: 50
-- **Valid Profiles**: 50 (100.00%)
+- **Total Candidate Profiles Ingested**: 100000
+- **Valid Profiles**: 100000 (100.00%)
 - **Malformed/Invalid Profiles**: 0 (0.00%)
 - **Total Validation Anomalies Identified**: 0
 
