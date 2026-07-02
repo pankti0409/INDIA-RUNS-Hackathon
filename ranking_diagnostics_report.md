@@ -11,14 +11,14 @@ This report provides debugging metrics and diagnostic warnings for the candidate
 - **Candidates Exported**: 100
 
 ## Score Distribution Metrics
-- **Mean Score**: 0.6908
-- **Median Score**: 0.6318
-- **Std Dev**: 0.1893
-- **Min Score**: 0.4104
-- **Max Score**: 0.9886
+- **Mean Score**: 0.4062
+- **Median Score**: 0.3841
+- **Std Dev**: 0.1200
+- **Min Score**: 0.2799
+- **Max Score**: 0.9553
 
 ## Automated Heuristic Diagnostics
-- **Score Compression Detected**: No (Spread: 0.5782)
+- **Score Compression Detected**: No (Spread: 0.6754)
 - **Over-Penalization Detected**: No (Average score below 10%)
 - **Weak Features Detected**: No
 - **Poor Separation Detected**: No
